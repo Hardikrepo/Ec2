@@ -12,6 +12,7 @@ Phases build in order — each phase produces something runnable/checkable befor
 - ALB + target group, health-check thresholds tuned for fast failure detection
 - Auto Scaling Group: `min:3 / desired:6 / max:12`, health check type `ELB`
 - Lifecycle hooks on the ASG: `EC2_INSTANCE_LAUNCHING`, `EC2_INSTANCE_TERMINATING`
+- Known gap: no WAF in front of the ALB yet — see Known Gaps below
 
 ## Phase 3 — Lifecycle automation (Terraform + Lambda/Python)
 - IAM roles, least-privilege, scoped per function
@@ -36,3 +37,6 @@ Phases build in order — each phase produces something runnable/checkable befor
 - Before/after metrics table
 - Cost estimate (NAT Gateway is the main line item)
 - "What would break this" section
+
+## Known gaps / hardening backlog
+- **No WAF in front of the ALB.** The load balancer is currently public-facing with no layer-7 filtering — no protection against SQLi/XSS, bot traffic, or rate abuse. Add AWS WAF (with a managed rule group + rate-based rule) attached to the ALB before treating this as production-grade.
