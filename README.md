@@ -8,7 +8,7 @@ Terraform + Lambda implementation of Phases 1-4 (network, compute/ALB, lifecycle
 
 ## Architecture
 
-Full diagram: [`docs/colorful-self-healing-app.html`](docs/colorful-self-healing-app.html) (open in a browser).
+**Live diagram:** https://hardikrepo.github.io/Ec2/colorful-self-healing-app.html (animated, hosted via GitHub Pages) — or open [`docs/colorful-self-healing-app.html`](docs/colorful-self-healing-app.html) locally in a browser.
 
 Editable draw.io variants (base, AWS 3D/isometric, technical-architecture, enterprise) are archived in [`docs/diagrams/archive/`](docs/diagrams/archive/) for reference. The prompts used to generate them via Miro AI/MCP are in [`docs/diagram-prompts/`](docs/diagram-prompts/).
 
