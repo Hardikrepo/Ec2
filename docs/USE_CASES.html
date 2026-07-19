@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Self-Healing EC2 Fleet — 100 Real-World Use Cases</title>
+<style>
+  :root {
+    --ink: #1a1d23;
+    --sub: #565d6b;
+    --line: #e2e5ea;
+    --accent: #b5540c;
+    --accent-bg: #fbeee3;
+    --bg: #ffffff;
+    --card: #f8f9fb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 48px 40px 80px;
+    line-height: 1.55;
+    font-size: 15px;
+  }
+  header.title-block {
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 24px;
+    margin-bottom: 36px;
+  }
+  header.title-block h1 {
+    font-size: 28px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  header.title-block p.subtitle {
+    color: var(--sub);
+    font-size: 15px;
+    margin: 0 0 4px;
+  }
+  header.title-block p.meta {
+    color: var(--sub);
+    font-size: 12.5px;
+    margin: 16px 0 0;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 40px 0 4px;
+    padding: 10px 14px;
+    background: var(--accent-bg);
+    border-left: 4px solid var(--accent);
+    color: #7a3a08;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  ol {
+    padding-left: 0;
+    margin: 16px 0 0;
+    list-style: none;
+    counter-reset: item;
+  }
+  li {
+    counter-increment: item;
+    position: relative;
+    padding: 10px 14px 10px 46px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  li::before {
+    content: counter(item);
+    position: absolute;
+    left: 0;
+    top: 10px;
+    width: 32px;
+    text-align: right;
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 13px;
+  }
+  li b {
+    display: inline;
+    color: var(--ink);
+  }
+  li .desc {
+    color: #33383f;
+  }
+  .note {
+    margin-top: 40px;
+    padding: 14px 16px;
+    background: var(--card);
+    border-left: 4px solid var(--sub);
+    font-size: 13px;
+    color: var(--sub);
+    font-style: italic;
+  }
+  @media print {
+    body { padding: 24px 32px; font-size: 12.5px; max-width: 100%; }
+    header.title-block { margin-bottom: 20px; }
+    h2 { page-break-before: auto; margin-top: 24px; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="title-block">
+  <h1>Self-Healing EC2 Fleet — 100 Real-World Use Cases</h1>
+  <p class="subtitle">A capstone architecture: ALB health checks → ASG lifecycle hooks → terminate/launch Lambda handlers → SSM readiness verification → SNS notification.</p>
+  <p class="meta">Each entry maps a concrete failure mode to how the control loop resolves it automatically, without human intervention.</p>
+</header>
+
+<h2>E-Commerce &amp; Retail</h2>
+<ol>
+<li><b>Black Friday traffic spike.</b> <span class="desc">One instance chokes under load and starts failing health checks while the rest of the fleet holds; it's cycled out instead of dragging down the whole tier.</span></li>
+<li><b>Checkout service memory leak.</b> <span class="desc">A Node/Java checkout process degrades over days; /health times out, instance is drained (in-flight carts preserved) and replaced.</span></li>
+<li><b>Bad third-party payment SDK update.</b> <span class="desc">One instance's outbound calls to a payment gateway start hanging, tying up threads until health checks fail; auto-replaced before it backs up the whole queue.</span></li>
+<li><b>Product search index corruption on one node.</b> <span class="desc">A single instance serves stale/broken search results; if wired to an app-level health check, it's pulled from rotation.</span></li>
+<li><b>Flash-sale bot traffic overwhelming a subset of instances.</b> <span class="desc">Targeted load skews unevenly across the ASG; unhealthy nodes are replaced while WAF (once added) blocks the bots.</span></li>
+<li><b>Cart session store connection exhaustion.</b> <span class="desc">An instance runs out of DB connections and stops responding; drained and replaced, session state archived to S3 first.</span></li>
+<li><b>Regional inventory sync failure.</b> <span class="desc">An instance pinned to a broken read replica serves wrong stock counts; caught by a custom health check and cycled.</span></li>
+<li><b>Post-deploy canary instance going bad.</b> <span class="desc">A rolling deploy pushes a crashing build to a subset; those instances fail health checks and get replaced (with alerting so the deploy itself still gets caught).</span></li>
+<li><b>Holiday-season kernel/OS-level host degradation.</b> <span class="desc">Underlying AWS hardware issue causes EC2 status check failures independent of app health; ASG replaces the instance automatically.</span></li>
+<li><b>Multi-AZ failover during a zone-level event.</b> <span class="desc">One AZ degrades; min-3-instance multi-AZ config keeps 99.95% availability while unhealthy nodes in the affected AZ are replaced.</span></li>
+</ol>
+
+<h2>SaaS &amp; B2B Platforms</h2>
+<ol start="11">
+<li><b>Tenant-specific workload causing noisy-neighbor CPU starvation.</b> <span class="desc">One instance pegged at 100% CPU by a single heavy tenant fails health checks and is replaced, isolating the blast radius.</span></li>
+<li><b>Background job worker deadlock.</b> <span class="desc">A queue-consuming instance hangs on a poison message; health check fails, instance recycled, message requeued.</span></li>
+<li><b>License/auth token expiry bug on one node.</b> <span class="desc">A stale cached credential causes 500s from one instance only; auto-replaced, fresh instance pulls a valid token via bootstrap.</span></li>
+<li><b>API gateway backend instance running out of file descriptors.</b> <span class="desc">Long-running process leaks FDs over weeks; self-healing resets the clock without a scheduled maintenance window.</span></li>
+<li><b>Customer-reported "random 502s".</b> <span class="desc">Intermittent failures traced to one flapping instance; ALB health checks catch what ad-hoc monitoring missed, and it's replaced before the next support ticket.</span></li>
+<li><b>SaaS trial-tier abuse causing resource exhaustion.</b> <span class="desc">One instance absorbs disproportionate free-tier traffic and degrades; cycled out while rate-limiting is fixed upstream.</span></li>
+<li><b>Feature-flag rollout crash-looping a subset of instances.</b> <span class="desc">Flag causes a startup crash on some but not all instances (race condition); crash-looping ones are auto-replaced and paged for investigation.</span></li>
+<li><b>Multi-tenant DB connection pool starvation.</b> <span class="desc">An instance holds stale/leaked pooled connections; replaced, new instance starts with a clean pool.</span></li>
+<li><b>SSO integration outage on one node's cached IdP metadata.</b> <span class="desc">Stale metadata causes auth failures from one instance; replacement bootstrap pulls fresh config via SSM.</span></li>
+<li><b>Log-forwarding agent crash silently degrading an instance.</b> <span class="desc">Sidecar crash causes upstream health probe timeouts; instance replaced, logs preserved via S3 archive first.</span></li>
+</ol>
+
+<h2>Fintech &amp; Banking</h2>
+<ol start="21">
+<li><b>Mid-transaction instance failure during ACH batch processing.</b> <span class="desc">Graceful drain (not hard kill) ensures in-flight transactions complete or are cleanly requeued, critical for financial consistency.</span></li>
+<li><b>Fraud-scoring service instance hangs on a malformed payload.</b> <span class="desc">Health check fails, instance replaced, malformed request logged to CloudTrail for audit.</span></li>
+<li><b>PCI-DSS compliance requirement for prompt patching.</b> <span class="desc">SSM Automation bootstrap on every replacement ensures new instances always launch with the latest AMI/patch level, satisfying continuous-compliance audits.</span></li>
+<li><b>Ledger-service instance clock drift causing reconciliation errors.</b> <span class="desc">Health check (or custom NTP-drift check) catches the node before it writes bad timestamps; replaced.</span></li>
+<li><b>Regulatory audit trail requirement.</b> <span class="desc">CloudTrail + CloudWatch Logs capture every lifecycle event (who/what/when an instance was cycled), satisfying SOC 2 / audit evidence requests.</span></li>
+<li><b>Trading-hours SLA (sub-3-minute recovery).</b> <span class="desc">RTO &lt; 3 min target ensures a degraded instance during market hours is replaced before it materially affects order execution.</span></li>
+<li><b>Session-token leakage prevention on terminated instances.</b> <span class="desc">Drain step archives/scrubs session state to S3 rather than letting a terminated instance's local disk (with tokens in memory) just vanish uncleanly.</span></li>
+<li><b>KYC document-processing instance stuck on a corrupt upload.</b> <span class="desc">Health check timeout catches the hang; instance replaced, stuck job requeued to a healthy node.</span></li>
+<li><b>Wire-transfer approval service failover.</b> <span class="desc">Multi-AZ + auto-replace ensures no single points of failure in a workflow where downtime has direct financial/legal consequences.</span></li>
+<li><b>Insider-threat/config-drift detection.</b> <span class="desc">If an instance's config diverges from the Launch Template baseline (manual SSH changes), it can be flagged and cycled back to a known-good state.</span></li>
+</ol>
+
+<h2>Healthcare &amp; Life Sciences</h2>
+<ol start="31">
+<li><b>Patient portal instance degrading during appointment booking windows.</b> <span class="desc">Self-healing keeps the portal available during peak morning booking traffic without manual scaling intervention.</span></li>
+<li><b>HL7/FHIR interface engine instance memory bloat.</b> <span class="desc">Long-running message-processing node leaks memory over a shift; replaced automatically before it drops messages.</span></li>
+<li><b>HIPAA audit logging requirement.</b> <span class="desc">CloudTrail records every instance lifecycle action, supporting HIPAA technical safeguards documentation.</span></li>
+<li><b>Telehealth session-handling instance failure mid-visit.</b> <span class="desc">Drain-before-terminate reduces (though doesn't eliminate) risk of abrupt session drops during a live video consult.</span></li>
+<li><b>Lab-results processing pipeline node stuck on a malformed HL7 message.</b> <span class="desc">Health check catches the hang, instance replaced, poison message isolated for manual review.</span></li>
+<li><b>After-hours on-call reduction for clinical IT staff.</b> <span class="desc">Routine instance failures at 3am are resolved automatically; SNS notifies but doesn't require action, reducing burnout for a small ops team.</span></li>
+<li><b>Disaster-recovery drill for a hospital system.</b> <span class="desc">Multi-AZ self-healing fleet is the baseline building block demonstrated in DR tabletop exercises.</span></li>
+<li><b>Patch compliance for a legacy Windows EC2 fleet running clinical software.</b> <span class="desc">Every replacement re-bootstraps from a patched AMI via SSM, avoiding manual patch-Tuesday fleet-wide reboots.</span></li>
+<li><b>PHI data residency enforcement.</b> <span class="desc">Instances always relaunch in approved subnets/AZs per the Launch Template, preventing accidental cross-region drift.</span></li>
+<li><b>Insurance-claims batch job instance crash.</b> <span class="desc">Mid-batch failure triggers drain + S3 archive of partial state, replacement instance resumes from checkpoint.</span></li>
+</ol>
+
+<h2>Media, Streaming &amp; Gaming</h2>
+<ol start="41">
+<li><b>Live-stream ingest node overload during a major sports event.</b> <span class="desc">Unhealthy ingest instances are cycled out in real time as viewership spikes.</span></li>
+<li><b>Game server instance desync causing player disconnects.</b> <span class="desc">Health check (custom TCP/game-protocol probe) detects a desynced server and replaces it, with graceful player-session draining.</span></li>
+<li><b>Video transcoding worker stuck on a corrupt input file.</b> <span class="desc">Health check timeout catches the hang; job requeued to a fresh instance.</span></li>
+<li><b>CDN origin server instance serving stale cache.</b> <span class="desc">Cycled automatically if cache-invalidation health checks fail.</span></li>
+<li><b>Esports tournament infrastructure reliability.</b> <span class="desc">Self-healing fleet is the resilience layer behind a match server pool where downtime during a broadcast is highly visible and reputationally costly.</span></li>
+<li><b>Ad-insertion service instance failure mid-stream.</b> <span class="desc">Replaced without interrupting the broader stream, since only the failed instance's segment is affected.</span></li>
+<li><b>User-generated content upload service instance disk-full condition.</b> <span class="desc">Health check (disk-space-aware) catches it before uploads start failing, instance replaced with clean storage.</span></li>
+<li><b>Matchmaking service instance queue backup.</b> <span class="desc">A hung matchmaking node is detected via custom health metric and cycled, preventing player queue times from silently growing.</span></li>
+<li><b>Post-launch day-one patch traffic surge.</b> <span class="desc">New game release causes massive concurrent load; self-healing keeps unhealthy nodes from compounding an already-stressed fleet.</span></li>
+<li><b>Regional latency degradation on one instance.</b> <span class="desc">CloudWatch alarm on p99 latency triggers investigation/replacement even before hard health-check failure.</span></li>
+</ol>
+
+<h2>Travel &amp; Hospitality</h2>
+<ol start="51">
+<li><b>Airline booking engine instance hang during a fare-sale event.</b> <span class="desc">High-concurrency booking traffic degrades one node; replaced before it causes double-bookings or timeouts.</span></li>
+<li><b>Hotel PMS integration instance losing connectivity to a property system.</b> <span class="desc">Health check catches the broken integration, instance cycled, connection re-established on the fresh node.</span></li>
+<li><b>Flight-status API instance serving stale data during an IRROPS event.</b> <span class="desc">Irregular operations (e.g., mass cancellations) — self-healing ensures the API tier stays responsive when it matters most.</span></li>
+<li><b>Loyalty-points calculation service instance crash mid-batch.</b> <span class="desc">Drain + S3 archive preserves partial calculation state for reprocessing.</span></li>
+<li><b>Check-in kiosk backend instance overload during a holiday travel peak.</b> <span class="desc">Unhealthy backend nodes replaced automatically ahead of a known traffic pattern (paired with scheduled scaling).</span></li>
+<li><b>Dynamic pricing engine instance stuck in a bad state.</b> <span class="desc">Serving incorrect prices; custom health check catches logical (not just network) failures.</span></li>
+<li><b>Multi-region DR for a booking platform.</b> <span class="desc">Self-healing fleet in each region is the unit of resilience that a broader multi-region failover strategy builds on top of.</span></li>
+<li><b>Third-party GDS connector instance timeout cascade.</b> <span class="desc">One instance's hung GDS (global distribution system) connections are isolated and replaced before they exhaust a shared connection pool.</span></li>
+</ol>
+
+<h2>Logistics &amp; Supply Chain</h2>
+<ol start="59">
+<li><b>Warehouse management system instance losing sync with barcode scanners.</b> <span class="desc">Health check (custom) detects desync, instance replaced during a shift change window.</span></li>
+<li><b>Route-optimization batch job instance running out of memory on a large job.</b> <span class="desc">Replaced, job requeued to a fresh instance with clean memory.</span></li>
+<li><b>Real-time package-tracking API instance degradation during peak shipping season.</b> <span class="desc">E.g., holiday e-commerce surge — self-healing keeps tracking updates flowing.</span></li>
+<li><b>EDI processing node stuck on a malformed file.</b> <span class="desc">Health check timeout isolates the hang, instance replaced, bad file quarantined.</span></li>
+<li><b>Fleet-telemetry ingestion instance overload from IoT sensor burst.</b> <span class="desc">Unhealthy ingestion nodes cycled as sensor data volume spikes.</span></li>
+<li><b>Cold-chain monitoring alert service instance failure.</b> <span class="desc">Critical for pharma/food logistics; self-healing minimizes the window where temperature-breach alerts could be missed.</span></li>
+<li><b>Customs/compliance document processing instance crash.</b> <span class="desc">Drain preserves in-flight document state before replacement.</span></li>
+</ol>
+
+<h2>Government &amp; Public Sector</h2>
+<ol start="66">
+<li><b>Citizen services portal instance failure during tax season or benefits enrollment period.</b> <span class="desc">Self-healing absorbs predictable seasonal load spikes without manual intervention.</span></li>
+<li><b>FedRAMP/continuous-monitoring patch compliance.</b> <span class="desc">Every instance replacement launches from an approved, patched AMI, supporting continuous ATO (Authority to Operate) requirements.</span></li>
+<li><b>Emergency alert system backend instance degradation.</b> <span class="desc">High-availability requirement (life-safety adjacent) makes automatic sub-3-minute recovery directly relevant.</span></li>
+<li><b>Public records request processing instance stuck on a large query.</b> <span class="desc">Health check catches the hang, instance replaced, query killed and logged.</span></li>
+<li><b>Election-night results reporting infrastructure.</b> <span class="desc">A highly visible, short-duration, high-traffic event where self-healing under load is the difference between "site is fine" and "site is down" headlines.</span></li>
+<li><b>Unemployment benefits portal surge during an economic downturn.</b> <span class="desc">Self-healing fleet plus ASG scaling handles unpredictable demand spikes without a war-room scaling event.</span></li>
+</ol>
+
+<h2>AdTech, Marketing &amp; Data</h2>
+<ol start="72">
+<li><b>Real-time bidding (RTB) instance latency degradation.</b> <span class="desc">Ad exchanges have strict SLA latency requirements (~100ms); an instance breaching that is caught by a latency-based CloudWatch alarm and cycled before it hurts the exchange relationship.</span></li>
+<li><b>Marketing email-send worker stuck mid-batch.</b> <span class="desc">Health check timeout catches the hang, batch resumes on a fresh instance, avoiding duplicate sends.</span></li>
+<li><b>Clickstream ingestion instance dropping events under load.</b> <span class="desc">Unhealthy ingestion nodes replaced, minimizing data loss for downstream analytics.</span></li>
+<li><b>A/B testing assignment service instance serving inconsistent variants.</b> <span class="desc">Custom health check on assignment-consistency catches a logic-level failure, not just a network one.</span></li>
+<li><b>Attribution pipeline instance crash during a campaign launch.</b> <span class="desc">Drain preserves partial attribution data before replacement.</span></li>
+<li><b>Customer data platform (CDP) instance connection pool exhaustion during a major campaign send.</b> <span class="desc">Replaced automatically instead of manually paged at 2am.</span></li>
+</ol>
+
+<h2>Internal DevOps &amp; Enterprise IT</h2>
+<ol start="78">
+<li><b>CI/CD runner instance stuck on a hung build.</b> <span class="desc">Health check timeout recycles the runner, unblocking the pipeline without manual intervention.</span></li>
+<li><b>Internal wiki/Confluence-alternative instance degradation.</b> <span class="desc">Lower-stakes but still benefits from the same pattern, demonstrating the architecture generalizes beyond customer-facing systems.</span></li>
+<li><b>VPN/bastion host instance failure.</b> <span class="desc">Self-healing keeps internal remote-access infrastructure available (with tighter security-group scoping than public-facing tiers).</span></li>
+<li><b>Internal API gateway instance memory leak from a chatty microservice.</b> <span class="desc">Cycled automatically before it degrades other internal consumers.</span></li>
+<li><b>Monitoring/observability stack self-hosting.</b> <span class="desc">E.g., a self-hosted Prometheus/Grafana instance — ironic but real: the monitoring system itself needs to be resilient, and this pattern applies recursively.</span></li>
+<li><b>On-call rotation reduction as an explicit engineering goal.</b> <span class="desc">The project's core pitch to an eng org: fewer 2am pages for "just restart the instance" class incidents.</span></li>
+<li><b>Compliance-driven immutable infrastructure adoption.</b> <span class="desc">Replacing instances via SSM-bootstrapped Launch Templates (rather than patching in place) supports an org-wide push toward immutable infra.</span></li>
+<li><b>Cost optimization via right-sized min/max ASG bounds combined with self-healing.</b> <span class="desc">Avoids over-provisioning "just in case" since unhealthy capacity is replaced rather than needing standby buffers.</span></li>
+<li><b>Chaos-engineering validation target.</b> <span class="desc">The fleet itself becomes the system under test in chaos experiments (e.g., randomly terminating instances to verify the self-healing loop actually works, à la Chaos Monkey).</span></li>
+<li><b>Blue/green or canary deployment safety net.</b> <span class="desc">If a canary batch of instances fails health checks post-deploy, they're cycled automatically while the deploy pipeline gets a clear signal to halt.</span></li>
+<li><b>Internal ML feature-store instance degradation.</b> <span class="desc">Feature-serving nodes for ML pipelines benefit from the same recovery loop as customer-facing services.</span></li>
+<li><b>Legacy monolith lift-and-shift to EC2 with limited refactoring budget.</b> <span class="desc">Self-healing gives a legacy app HA characteristics without rewriting it for containers/serverless.</span></li>
+<li><b>Log-shipping agent failure silently causing observability gaps.</b> <span class="desc">Instance-level health check tied to agent liveness catches "app is fine but we're blind" scenarios.</span></li>
+</ol>
+
+<h2>Cross-Cutting &amp; Architectural Scenarios</h2>
+<ol start="91">
+<li><b>Instance-level security patch (CVE) rollout.</b> <span class="desc">Updating the Launch Template's AMI and letting natural instance cycling (or a forced refresh) roll the patch out fleet-wide gradually.</span></li>
+<li><b>Spot Instance interruption handling.</b> <span class="desc">The same lifecycle-hook pattern (adapted for EC2_SPOT_INSTANCE_TERMINATION) can gracefully drain Spot capacity before AWS reclaims it, not just handle health-check failures.</span></li>
+<li><b>Cross-region disaster recovery drill.</b> <span class="desc">Demonstrating that a self-healing fleet in a secondary region can absorb failover traffic from a primary-region outage.</span></li>
+<li><b>Zero-downtime AMI rotation for base-image security hardening.</b> <span class="desc">New hardened AMI rolled into the Launch Template; instances cycle onto it over time without a maintenance window.</span></li>
+<li><b>Capacity-aware self-healing during a dependency outage.</b> <span class="desc">E.g., a downstream DB is slow — distinguishing "my instance is broken" from "a dependency is broken" so the fleet doesn't churn-replace every instance chasing a problem replacement can't fix (an important design consideration, not just a use case).</span></li>
+<li><b>Multi-tenant SaaS "noisy neighbor" isolation at the infra layer.</b> <span class="desc">Reinforces #11 at an architectural level: unhealthy-node replacement as a blast-radius containment tool, not just an uptime tool.</span></li>
+<li><b>Interview/portfolio narrative.</b> <span class="desc">"I designed and (partially) built a production-grade self-healing compute tier using ASG lifecycle hooks, EventBridge, and Lambda, targeting sub-3-minute RTO and 99.95% availability" is a strong, specific talking point backed by an actual architecture doc.</span></li>
+<li><b>Cost-of-downtime justification for stakeholders.</b> <span class="desc">RTO/availability targets in this project's README give a concrete number ("99.95% = ~4.4 hrs/year downtime budget") to anchor a business case for investing in automation.</span></li>
+<li><b>Baseline for a service-mesh or Kubernetes migration comparison.</b> <span class="desc">This EC2-native pattern is a useful "before" state to contrast against if the org later evaluates EKS/ECS with built-in self-healing, showing you understand the tradeoffs of each.</span></li>
+<li><b>Template for other stateless-tier self-healing projects.</b> <span class="desc">The same lifecycle-hook + Lambda + SSM pattern generalizes to any stateless EC2 fleet (internal tools, batch workers, API tiers) beyond this specific capstone, making this a reusable reference architecture.</span></li>
+</ol>
+
+<div class="note">
+Note: many of these (custom health checks on latency/logic/queue-depth rather than just TCP/HTTP reachability) require extending the health-check layer beyond the base ALB target-group check described in ARCHITECTURE.md. Worth flagging in PLAN.md if any of these get prioritized.
+</div>
+
+</body>
+</html>

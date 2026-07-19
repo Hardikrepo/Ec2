@@ -1,0 +1,295 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Prototype self-healing EC2 fleet with ALB, Auto Scaling lifecycle hooks, EventBridge, and Lambda.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least two public subnets for the internet-facing ALB.
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets in at least two Availability Zones for the fleet.
+  AmiId:
+    Type: AWS::EC2::Image::Id
+  InstanceType:
+    Type: String
+    Default: t3.micro
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Optional email address. Leave blank to omit the subscription.
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Optional existing Route 53 public hosted zone ID.
+  DomainName:
+    Type: String
+    Default: ''
+    Description: Optional DNS name to alias to the ALB, for example app.example.com.
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+  HasCustomDomain: !And
+    - !Not [!Equals [!Ref HostedZoneId, '']]
+    - !Not [!Equals [!Ref DomainName, '']]
+
+Resources:
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic to the prototype ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow application traffic only from the ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      Subnets: !Ref PublicSubnetIds
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  ApplicationDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasCustomDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: {Name: !Ref InstanceProfile}
+        SecurityGroupIds: [!Ref InstanceSecurityGroup]
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+            dnf install -y nginx || yum install -y nginx
+            printf 'healthy\n' >/usr/share/nginx/html/health
+            printf '<h1>Self-healing EC2 fleet</h1>\n' >/usr/share/nginx/html/index.html
+            systemctl enable --now nginx
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: Listener
+    Properties:
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+      MinSize: '3'
+      DesiredCapacity: '3'
+      MaxSize: '6'
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      TargetGroupARNs: [!Ref TargetGroup]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: self-healing-fleet
+          PropagateAtLaunch: true
+
+  LaunchHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      LifecycleTransition: autoscaling:EC2_INSTANCE_LAUNCHING
+      HeartbeatTimeout: 180
+      DefaultResult: ABANDON
+
+  TerminateHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+      HeartbeatTimeout: 120
+      DefaultResult: CONTINUE
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref NotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  LifecycleLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CompleteLifecycleAndNotify
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: autoscaling:CompleteLifecycleAction
+                Resource: !Sub arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AutoScalingGroup}
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref NotificationTopic
+
+  LifecycleHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LifecycleLambdaRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          TOPIC_ARN: !Ref NotificationTopic
+      Code:
+        ZipFile: |
+          import json, os, boto3
+          autoscaling = boto3.client('autoscaling')
+          sns = boto3.client('sns')
+
+          def handler(event, context):
+              detail = event['detail']
+              transition = detail['LifecycleTransition']
+              result = 'CONTINUE'
+              autoscaling.complete_lifecycle_action(
+                  LifecycleHookName=detail['LifecycleHookName'],
+                  AutoScalingGroupName=detail['AutoScalingGroupName'],
+                  LifecycleActionToken=detail['LifecycleActionToken'],
+                  LifecycleActionResult=result,
+              )
+              sns.publish(
+                  TopicArn=os.environ['TOPIC_ARN'],
+                  Subject='EC2 fleet lifecycle event',
+                  Message=json.dumps({
+                      'instance': detail.get('EC2InstanceId'),
+                      'transition': transition,
+                      'result': result,
+                  }),
+              )
+              return {'statusCode': 200, 'result': result}
+
+  LifecycleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source: [aws.autoscaling]
+        detail-type: [EC2 Instance-launch Lifecycle Action, EC2 Instance-terminate Lifecycle Action]
+        detail:
+          AutoScalingGroupName: [!Ref AutoScalingGroup]
+      Targets:
+        - Arn: !GetAtt LifecycleHandler.Arn
+          Id: LifecycleHandler
+
+  EventBridgeInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LifecycleHandler
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LifecycleRule.Arn
+
+  UnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: One or more ALB targets are unhealthy
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      AlarmActions: [!Ref NotificationTopic]
+
+Outputs:
+  ApplicationUrl:
+    Description: Prototype HTTP endpoint; add ACM/HTTPS before production use.
+    Value: !Sub http://${LoadBalancer.DNSName}
+  AutoScalingGroupName:
+    Value: !Ref AutoScalingGroup
+  NotificationTopicArn:
+    Value: !Ref NotificationTopic
+  CustomDomainUrl:
+    Condition: HasCustomDomain
+    Description: Route 53 alias URL for the application.
+    Value: !Sub http://${DomainName}

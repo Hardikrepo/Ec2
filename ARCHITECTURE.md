@@ -45,7 +45,7 @@ Route 53 · Internet Gateway · Application Load Balancer (+ target group) · NA
 
 ## 7. Output format
 
-Current diagram is hand-built inline **SVG** (embedded in an HTML artifact, theme-aware, [`docs/architecture-diagram.html`](docs/architecture-diagram.html)). Not draw.io/Mermaid/PlantUML source.
+Current diagram is hand-built inline **SVG** (embedded in an HTML artifact, theme-aware, [`docs/colorful-self-healing-app.html`](docs/colorful-self-healing-app.html)). Editable draw.io variants are archived in [`docs/diagrams/archive/`](docs/diagrams/archive/).
 
 ## 8. Style / detail level
 

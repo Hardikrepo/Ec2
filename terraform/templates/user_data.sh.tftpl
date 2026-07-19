@@ -1,0 +1,72 @@
+#!/bin/bash
+set -euxo pipefail
+dnf install -y nginx || yum install -y nginx
+
+printf 'healthy\n' >/usr/share/nginx/html/health
+
+cat >/usr/share/nginx/html/index.html <<'HTML'
+<h1>Self-healing EC2 fleet</h1>
+<p><a href="/activity.html">Live ASG activity</a></p>
+HTML
+
+cat >/usr/share/nginx/html/activity.html <<'HTML'
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Self-healing fleet: live ASG activity</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; }
+    th { background: #f0f0f0; }
+    caption { text-align: left; margin-bottom: 0.5rem; color: #666; }
+  </style>
+</head>
+<body>
+  <p><a href="/">&larr; back</a></p>
+  <h1>Live ASG activity</h1>
+  <table>
+    <caption id="status">loading...</caption>
+    <thead>
+      <tr><th>Start</th><th>Status</th><th>Description</th><th>Cause</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <script src="activity.js"></script>
+</body>
+</html>
+HTML
+
+cat >/usr/share/nginx/html/activity.js <<'JS'
+const ACTIVITY_FEED_URL = "${activity_feed_url}";
+const POLL_INTERVAL_MS = 5000;
+
+async function refresh() {
+  const status = document.getElementById("status");
+  const rows = document.getElementById("rows");
+  try {
+    const res = await fetch(ACTIVITY_FEED_URL);
+    const data = await res.json();
+    rows.innerHTML = "";
+    for (const a of data.activities) {
+      const tr = document.createElement("tr");
+      const start = new Date(a.startTime).toLocaleString();
+      tr.innerHTML =
+        "<td>" + start + "</td>" +
+        "<td>" + a.statusCode + "</td>" +
+        "<td>" + a.description + "</td>" +
+        "<td>" + a.cause + "</td>";
+      rows.appendChild(tr);
+    }
+    status.textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (err) {
+    status.textContent = "failed to load: " + err;
+  }
+}
+
+refresh();
+setInterval(refresh, POLL_INTERVAL_MS);
+JS
+
+systemctl enable --now nginx
