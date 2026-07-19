@@ -25,6 +25,10 @@ Editable draw.io variants (base, AWS 3D/isometric, technical-architecture, enter
 
 **Targets:** RTO < 3 min per instance replacement, 99.95% availability (multi-AZ, min 3 instances).
 
+## Use cases
+
+100 concrete failure scenarios this control loop resolves without human intervention, across e-commerce, SaaS, media, and more: [`docs/USE_CASES.pdf`](https://github.com/Hardikrepo/Ec2/blob/master/docs/USE_CASES.pdf) (also available as [Markdown](docs/USE_CASES.md) or [HTML](docs/USE_CASES.html)).
+
 ## Terraform
 
 ```
