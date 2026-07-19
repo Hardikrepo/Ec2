@@ -8,9 +8,7 @@ Terraform + Lambda implementation of Phases 1-4 (network, compute/ALB, lifecycle
 
 ## Architecture
 
-**Live diagram:** https://hardikrepo.github.io/Ec2/colorful-self-healing-app.html (animated, hosted via GitHub Pages) — or open [`docs/colorful-self-healing-app.html`](docs/colorful-self-healing-app.html) locally in a browser.
-
-Editable draw.io variants (base, AWS 3D/isometric, technical-architecture, enterprise) are archived in [`docs/diagrams/archive/`](docs/diagrams/archive/) for reference. The prompts used to generate them via Miro AI/MCP are in [`docs/diagram-prompts/`](docs/diagram-prompts/).
+**Live diagram:** https://hardikrepo.github.io/self-healing-ec2-fleet/colorful-self-healing-app.html (animated, hosted via GitHub Pages) — or open [`docs/colorful-self-healing-app.html`](docs/colorful-self-healing-app.html) locally in a browser.
 
 **Stack:** Route 53 → ALB (multi-AZ) → Auto Scaling Group (private subnets, 3 AZs) → EventBridge → Lambda (terminate/launch handlers) → SSM Automation, with CloudWatch/CloudTrail/SNS for observability.
 
@@ -27,7 +25,7 @@ Editable draw.io variants (base, AWS 3D/isometric, technical-architecture, enter
 
 ## Use cases
 
-100 concrete failure scenarios this control loop resolves without human intervention, across e-commerce, SaaS, media, and more: [`docs/USE_CASES.pdf`](https://github.com/Hardikrepo/Ec2/blob/master/docs/USE_CASES.pdf) (also available as [Markdown](docs/USE_CASES.md) or [HTML](docs/USE_CASES.html)).
+100 concrete failure scenarios this control loop resolves without human intervention, across e-commerce, SaaS, media, and more: [`docs/USE_CASES.pdf`](https://github.com/Hardikrepo/self-healing-ec2-fleet/blob/master/docs/USE_CASES.pdf) (also available as [Markdown](docs/USE_CASES.md) or [HTML](docs/USE_CASES.html)).
 
 ## Terraform
 
